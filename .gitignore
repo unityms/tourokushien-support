@@ -1,0 +1,13 @@
+# 個人情報・申請書類はコミットしない
+*.pdf
+*.jpg
+*.jpeg
+*.png
+*.heic
+*.docx
+*.doc
+*.xlsx
+*.xls
+work/
+out/
+uploads/
