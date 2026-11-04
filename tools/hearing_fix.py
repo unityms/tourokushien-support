@@ -9,6 +9,7 @@
   "<元ファイル名の先頭>": {
     "company": "株式会社ヤマサORM", "name_col": "B", "yomi_col": "C", "date_col": "F",
     "answer_cols": "GHIJK", "vn_cols": "GH", "non_vn": ["氏名の一部", ...], "last_col": "M",
+    "question_cols": "GHIJK",  # 省略時は answer_cols
     "red": ["I20"], "yomi": {"氏名の一部": "呼名"}, "status": {"氏名の一部": "帰国中（産休・育休中）"},
     "fixtext": {"H3": ["誤", "正"]}, "dedupe": ["G7"]
   }
@@ -28,7 +29,7 @@ conf = json.load(open(CONF, encoding='utf-8'))
 YM = conf['ym']
 MONTH_END = datetime.datetime.strptime(conf['month_end'], '%Y-%m-%d')
 NOREPLY_IN = ('返答なし', '返信なし', 'リプライなし', 'リプライありません')
-NOREPLY = conf.get('noreply_text', '期日までの相談報告事項なし')
+NOREPLY = conf.get('noreply_text', '（期日までの相談報告事項なし）')
 
 log = []
 
@@ -94,16 +95,21 @@ def autofit_rows(ws, r1, r2, last):
             ws.row_dimensions[r].height = round(need, 1)
 
 
-def set_noreply(d):
-    d.value = NOREPLY
-    d.number_format = 'General'
-    recolor(d, rgb='FF000000', bold=False)
-    d.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+def set_noreply(ws, r, d, qcols, skip):
+    # 未返信: リプライ日は空欄にし、各質問欄に「（期日までの相談報告事項なし）」と記載
+    d.value = None
+    for c in qcols:
+        if c in skip:
+            continue
+        cell = ws[f'{c}{r}']
+        cell.value = NOREPLY
+        recolor(cell, rgb='FF000000', bold=False)
 
 
 for prefix, extra in conf['companies'].items():
     company, NC, YC, DC = extra['company'], extra['name_col'], extra['yomi_col'], extra['date_col']
     ANS, VN, NONVN, LAST = extra['answer_cols'], extra.get('vn_cols', ''), extra.get('non_vn', []), extra['last_col']
+    QCOLS = extra.get('question_cols', ANS)  # 未返信コメントを入れる質問欄
     hits = glob.glob(os.path.join(IN, prefix + '*'))
     if not hits:
         print('MISSING', company)
@@ -138,8 +144,9 @@ for prefix, extra in conf['companies'].items():
         d = ws[f'{DC}{r}']
         has_ans = any(ws[f'{c}{r}'].value not in (None, '') for c in ANS)
         status = next((v for k, v in extra.get('status', {}).items() if k in name), None)
+        skip = VN if (VN and any(k in name for k in NONVN)) else ''
         if isinstance(d.value, str) and d.value.strip() in NOREPLY_IN:
-            set_noreply(d)
+            set_noreply(ws, r, d, QCOLS, skip)
             note(company, f'{name.strip()}：未返信 →「{NOREPLY}」')
         elif d.value in (None, ''):
             if has_ans:
@@ -150,7 +157,7 @@ for prefix, extra in conf['companies'].items():
                 d.value = status
                 note(company, f'{name.strip()}：回答なし →「{status}」（前月と同じ扱い、要確認）')
             else:
-                set_noreply(d)
+                set_noreply(ws, r, d, QCOLS, skip)
                 note(company, f'{name.strip()}：未返信 →「{NOREPLY}」')
         if VN and any(k in name for k in NONVN):
             for c in VN:
